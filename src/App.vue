@@ -18,15 +18,25 @@
                 <Loader v-if="loading" class="full-loader" />
               </transition>
               <div class="card-body">
-                <div class="text-right">
-                  <span class="mr-2 font-weight-bold">Devise:</span>
-                  <select name id="selectCurrency" v-model="currentCurrency">
-                    <option
-                      v-for="currency in currencies"
-                      :key="currency"
-                      :value="currency"
-                    >{{ currency }}</option>
-                  </select>
+                <div class="card-header bg-white d-flex justify-content-between">
+                  <div class="actions">
+                    <RefreshButton @btnClick="loadData" />
+                  </div>
+                  <div class="text-right">
+                    <span class="mr-2 font-weight-bold">Devise:</span>
+                    <select
+                      name
+                      id="selectCurrency"
+                      v-model="currentCurrency"
+                      @change="onCurrencyChange"
+                    >
+                      <option
+                        v-for="currency in currencies"
+                        :key="currency"
+                        :value="currency"
+                      >{{ currency }}</option>
+                    </select>
+                  </div>
                 </div>
                 <div class="table-responsive">
                   <table class="table">
@@ -54,16 +64,23 @@
                         <td>{{compte.Bank}}</td>
                         <td>{{compte.Bank}}</td>
                         <td
+                          v-if="compte.FormatedAmout"
                           :class="compte.FormatedAmout > 0 ? 'positive': 'negative'"
                         >{{ formatCurrency(compte.FormatedAmout, compte.Currency) }}</td>
                         <td
-                          :class="compte.FormatedAmout > 0 ? 'positive': 'negative'"
-                        >{{ formatCurrency(compte.FormatedAmout) }}</td>
+                          v-if="compte.FormatedCurrencyAmout"
+                          :class="compte.FormatedCurrencyAmout > 0 ? 'positive': 'negative'"
+                        >{{ formatCurrency(compte.FormatedCurrencyAmout) }}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
-                <div class="text-right">Sold consolidé: {{ formatCurrency(totalAmout) }}</div>
+                <div class="text-right">
+                  Sold consolidé:
+                  <span
+                    :class="totalAmout > 0 ? 'positive': ''"
+                  >{{ formatCurrency(totalAmout) }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -77,35 +94,16 @@
 import WorldMap from "@/components/WorldMap";
 import Header from "@/components/Header";
 import Loader from "@/components/Loader";
-// TODO: ajouter plus de data avec les autres currency pour tester
-// TODO: mettre la devise par defaut a la premer valeur
-// TODO: Convertir la monnai dans la currency
-// TODO: Afficher le montant de la conversion et la date
-// TODO: Ajouter un champ dans la modification de la monnaie ????
+import RefreshButton from "@/components/RefreshButton";
+import { asyncForEach } from "@/utilities";
+
 export default {
   name: "app",
   components: {
     WorldMap,
     Header,
-    Loader
-  },
-  filters: {
-    currency(value) {
-      let formatedValue;
-      switch (this.currentCurrency) {
-        case "EUR":
-          Intl.NumberFormat("U");
-          formatedValue = `${value} €`;
-          break;
-        case "USD":
-          formatedValue = `${value} €`;
-          break;
-        default:
-          formatedValue = value;
-          break;
-      }
-      return formatedValue;
-    }
+    Loader,
+    RefreshButton
   },
   data() {
     return {
@@ -119,31 +117,42 @@ export default {
     };
   },
   async created() {
-    this.loading = true;
-    // setTimeout(async () => {
-    const { counterpart } = await (await fetch("data/data.json")).json();
-    this.comptes = counterpart;
-    console.log(this.comptes);
-
-    this.comptes.forEach(compte => {
-      // TODO: faire un if et convert les USD to EUR
-      compte.FormatedAmout = parseFloat(compte.Amout.replace(/\s/g, ""));
-      this.currencies.add(compte.Currency);
-      this.$refs.map
-        .querySelector("#" + compte.CountryCode3)
-        .classList.add("present");
-    });
-
-    this.loading = false;
-    // TODO: la conversion
-    // let rep = await this.convertAmount("USD", "EUR", 1000);
-    // console.log(rep);
-
-    // console.log(this.comptes);
-    // }, 1000);
+    await this.loadData();
+    // this.currentCurrency = this.comptes[0].Currency;
   },
-  destroyed() {},
   methods: {
+    async loadData() {
+      this.loading = true;
+
+      const { counterpart } = await (await fetch("data/data.json")).json();
+      this.comptes = counterpart;
+
+      await this.formatData();
+      this.loading = false;
+    },
+    async formatData() {
+      await asyncForEach(this.comptes, async compte => {
+        compte.FormatedAmout = parseFloat(compte.Amout.replace(/\s/g, ""));
+        compte.FormatedCurrencyAmout = compte.FormatedAmout;
+        if (compte.Currency != this.currentCurrency) {
+          compte.FormatedCurrencyAmout = await this.convertAmount(
+            compte.Currency,
+            this.currentCurrency,
+            compte.FormatedAmout
+          );
+        }
+        this.currencies.add(compte.Currency);
+        this.$refs.map
+          .querySelector("#" + compte.CountryCode3)
+          .classList.add("present");
+      });
+      this.computeTotalAmout();
+    },
+    async onCurrencyChange() {
+      this.loading = true;
+      await this.formatData();
+      this.loading = false;
+    },
     hoverCountry(event) {
       if (this.$refs.lists) {
         this.$refs.lists.forEach(account => {
@@ -161,16 +170,12 @@ export default {
     deactivateArea() {
       this.$refs.map.querySelectorAll(".is-active").forEach(element => {
         element.classList.remove("is-active");
-        // console.log(element);
       });
     },
     computeTotalAmout() {
       this.totalAmout = this.comptes.reduce((acc, compte) => {
-        console.log(compte.FormatedAmout);
-
-        return acc + compte.FormatedAmout;
+        return acc + compte.FormatedCurrencyAmout;
       }, 0);
-      console.log(this.totalAmout);
     },
     async convertAmount(from, to, value) {
       return new Promise((resolve, reject) => {
