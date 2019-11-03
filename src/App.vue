@@ -179,7 +179,7 @@ export default {
     },
     async convertAmount(from, to, value) {
       return new Promise((resolve, reject) => {
-        fetch(`http://api.ibanfirst.com/PublicAPI/Rate/${to}${from}/`)
+        fetch(`//api.ibanfirst.com/PublicAPI/Rate/${to}${from}/`)
           .then(response => response.json())
           .then(json => {
             let newAmount = parseFloat(value / json.rate.rate);
